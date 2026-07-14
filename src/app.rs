@@ -11,7 +11,8 @@ const VERSION: &str = "310.7.0";
 const EXPECTED_SHA256: &str = "be6e434a94ca32499515eb62ca0e6c274526055d568d0426e4c652dcdfb6ee6e";
 const CNN_E_VERSION: &str = "3.7.0";
 const CNN_E_EXPECTED_SHA256: &str =
-    "8bea8eee99861d0cdc9b8b90e1fb915f5d96750c2d575ed8d2417452105581df";
+    "a59ebaa6bf2e3ee2ed3aa8f6b73971175ede7484963c211e1e93c08e492bf8ed";
+const NVIDIA_RELEASES: &str = "https://github.com/NVIDIA/DLSS/releases/download";
 const DLL_NAME: &str = "nvngx_dlss.dll";
 const BACKUP_SUFFIX: &str = ".dlls-swap-original";
 
@@ -71,6 +72,15 @@ impl Preset {
                 expected_sha256: EXPECTED_SHA256,
             },
         }
+    }
+}
+
+impl DlssBuild {
+    fn download_url(self) -> String {
+        format!(
+            "{NVIDIA_RELEASES}/v{}/ngx_dlss_demo_windows.zip",
+            self.version
+        )
     }
 }
 
@@ -258,7 +268,7 @@ fn run(cli: Cli) -> Result<(), String> {
     match cli.action {
         Action::Status => {
             let build = cli.preset.build();
-            let source = source_dll(build)?;
+            let source = source_dll(build, !cli.dry_run)?;
             status(
                 &game_root,
                 &source,
@@ -271,7 +281,7 @@ fn run(cli: Cli) -> Result<(), String> {
         Action::Restore => restore(&game_root, &cache_file, located, cli.dry_run),
         Action::Launch(command) => {
             let build = cli.preset.build();
-            let source = source_dll(build)?;
+            let source = source_dll(build, !cli.dry_run)?;
             swap(
                 &game_root,
                 &source,
@@ -313,36 +323,81 @@ fn game_root() -> Result<PathBuf, String> {
     fs::canonicalize(&root).map_err(|error| format!("cannot resolve game directory: {error}"))
 }
 
-fn source_dll(build: DlssBuild) -> Result<PathBuf, String> {
-    let project_source = source_in_root(Path::new(env!("CARGO_MANIFEST_DIR")), build);
-    if project_source.is_file() {
-        return Ok(project_source);
-    }
-
-    if let Ok(executable) = env::current_exe()
-        && let Some(root) = executable.parent()
-    {
-        let installed_source = source_in_root(root, build);
-        if installed_source.is_file() {
-            return Ok(installed_source);
-        }
-    }
-
+fn source_dll(build: DlssBuild, download_missing: bool) -> Result<PathBuf, String> {
     let data_home = env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
         .ok_or("HOME and XDG_DATA_HOME are not set")?;
-    Ok(data_home
+    let source = data_home
         .join("dlls-swap")
         .join(build.version)
-        .join(DLL_NAME))
+        .join(DLL_NAME);
+    if download_missing && !source.is_file() {
+        download_source(&source, build)?;
+    }
+    Ok(source)
 }
 
-fn source_in_root(root: &Path, build: DlssBuild) -> PathBuf {
-    root.join("assets")
-        .join("dlss")
-        .join(build.version)
-        .join(DLL_NAME)
+fn download_source(destination: &Path, build: DlssBuild) -> Result<(), String> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| format!("invalid DLL path: {}", destination.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+
+    let work = parent.join(format!(".download-{}", std::process::id()));
+    if work.exists() {
+        fs::remove_dir_all(&work)
+            .map_err(|error| format!("cannot clear {}: {error}", work.display()))?;
+    }
+    fs::create_dir(&work).map_err(|error| format!("cannot create {}: {error}", work.display()))?;
+
+    let result = download_source_in(&work, destination, build);
+    let _ = fs::remove_dir_all(&work);
+    result
+}
+
+fn download_source_in(work: &Path, destination: &Path, build: DlssBuild) -> Result<(), String> {
+    let archive = work.join("dlss.zip");
+    let extracted = work.join(DLL_NAME);
+    let url = build.download_url();
+    println!("dlss-swap: downloading DLSS {} from {url}", build.version);
+
+    run_tool(
+        Command::new("curl")
+            .args([
+                "--location",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--output",
+            ])
+            .arg(&archive)
+            .arg(&url),
+        "curl",
+    )?;
+    run_tool(
+        Command::new("unzip")
+            .args(["-q", "-j"])
+            .arg(&archive)
+            .arg("*/nvngx_dlss.dll")
+            .arg("-d")
+            .arg(work),
+        "unzip",
+    )?;
+    verify_source(&extracted, build)?;
+    atomic_replace(&extracted, destination)
+}
+
+fn run_tool(command: &mut Command, name: &str) -> Result<(), String> {
+    let status = command
+        .status()
+        .map_err(|error| format!("cannot run {name}: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{name} failed with {status}"))
+    }
 }
 
 fn verify_source(source: &Path, build: DlssBuild) -> Result<(), String> {
@@ -895,14 +950,14 @@ mod tests {
     }
 
     #[test]
-    fn builds_project_local_source_path() {
+    fn builds_official_nvidia_download_urls() {
         assert_eq!(
-            source_in_root(Path::new("/project"), Preset::E.build()),
-            Path::new("/project/assets/dlss/3.7.0/nvngx_dlss.dll")
+            Preset::E.build().download_url(),
+            "https://github.com/NVIDIA/DLSS/releases/download/v3.7.0/ngx_dlss_demo_windows.zip"
         );
         assert_eq!(
-            source_in_root(Path::new("/project"), Preset::L.build()),
-            Path::new("/project/assets/dlss/310.7.0/nvngx_dlss.dll")
+            Preset::L.build().download_url(),
+            "https://github.com/NVIDIA/DLSS/releases/download/v310.7.0/ngx_dlss_demo_windows.zip"
         );
     }
 

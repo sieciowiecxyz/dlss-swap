@@ -37,7 +37,7 @@ mode selected in the game.
 - A game that contains `nvngx_dlss.dll`
 - DXVK-NVAPI support for the DLSS override variables
 - Rust 2024 toolchain to build from source
-- Legally obtained NVIDIA DLSS DLLs
+- `curl` and `unzip`
 
 ## Build and install
 
@@ -48,19 +48,9 @@ cargo build --release
 install -Dm755 target/release/dlss-swap ~/.local/bin/dlss-swap
 ```
 
-Place the pinned DLLs in the cloned repository:
-
-```text
-assets/dlss/3.7.0/nvngx_dlss.dll
-assets/dlss/310.7.0/nvngx_dlss.dll
-```
-
-The installed program remembers the repository used during compilation and
-uses these files directly, so they do not need to be downloaded or copied. For
-a portable installation, the same `assets/dlss/` tree can instead be placed
-next to the `dlss-swap` executable.
-
-The existing per-user data directory remains supported as a fallback:
+On first use of a preset, the program downloads the matching official Windows
+demo archive from the [NVIDIA/DLSS releases](https://github.com/NVIDIA/DLSS/releases),
+extracts `nvngx_dlss.dll`, verifies its pinned SHA-256 hash, and stores it in:
 
 ```text
 ~/.local/share/dlls-swap/3.7.0/nvngx_dlss.dll
@@ -70,8 +60,8 @@ The existing per-user data directory remains supported as a fallback:
 When `XDG_DATA_HOME` is set, `$XDG_DATA_HOME/dlls-swap/` is used instead. The
 historical `dlls-swap` storage spelling is retained for compatibility.
 
-The program verifies pinned DLLs against built-in SHA-256 hashes. It does not
-download or redistribute NVIDIA binaries.
+No NVIDIA binaries are included in this repository. An existing verified DLL
+is reused without network access.
 
 ## Steam Launch Options
 
@@ -117,7 +107,8 @@ it automatically for Proton launch commands.
    directory.
 3. Reuse a cached hash only when device, inode, size, and modification time are
    unchanged.
-4. Verify the selected pinned DLL against its expected SHA-256 hash.
+4. Download a missing pinned DLL from the matching official NVIDIA release and
+   verify it against its expected SHA-256 hash.
 5. Create a one-time backup when one does not already exist.
 6. Replace the target through a same-directory temporary file and atomic rename.
 7. Set the DXVK-NVAPI preset override and `exec` the game command.
