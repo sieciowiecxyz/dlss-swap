@@ -48,7 +48,19 @@ cargo build --release
 install -Dm755 target/release/dlss-swap ~/.local/bin/dlss-swap
 ```
 
-Place the pinned DLLs in the data directory:
+Place the pinned DLLs in the cloned repository:
+
+```text
+assets/dlss/3.7.0/nvngx_dlss.dll
+assets/dlss/310.7.0/nvngx_dlss.dll
+```
+
+The installed program remembers the repository used during compilation and
+uses these files directly, so they do not need to be downloaded or copied. For
+a portable installation, the same `assets/dlss/` tree can instead be placed
+next to the `dlss-swap` executable.
+
+The existing per-user data directory remains supported as a fallback:
 
 ```text
 ~/.local/share/dlls-swap/3.7.0/nvngx_dlss.dll

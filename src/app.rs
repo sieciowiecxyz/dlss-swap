@@ -314,6 +314,20 @@ fn game_root() -> Result<PathBuf, String> {
 }
 
 fn source_dll(build: DlssBuild) -> Result<PathBuf, String> {
+    let project_source = source_in_root(Path::new(env!("CARGO_MANIFEST_DIR")), build);
+    if project_source.is_file() {
+        return Ok(project_source);
+    }
+
+    if let Ok(executable) = env::current_exe()
+        && let Some(root) = executable.parent()
+    {
+        let installed_source = source_in_root(root, build);
+        if installed_source.is_file() {
+            return Ok(installed_source);
+        }
+    }
+
     let data_home = env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
@@ -322,6 +336,13 @@ fn source_dll(build: DlssBuild) -> Result<PathBuf, String> {
         .join("dlls-swap")
         .join(build.version)
         .join(DLL_NAME))
+}
+
+fn source_in_root(root: &Path, build: DlssBuild) -> PathBuf {
+    root.join("assets")
+        .join("dlss")
+        .join(build.version)
+        .join(DLL_NAME)
 }
 
 fn verify_source(source: &Path, build: DlssBuild) -> Result<(), String> {
@@ -871,6 +892,18 @@ mod tests {
         assert_eq!(cli.preset.env_value(), "render_preset_e");
         assert_eq!(cli.preset.build().version, CNN_E_VERSION);
         assert_eq!(cli.preset.build().expected_sha256, CNN_E_EXPECTED_SHA256);
+    }
+
+    #[test]
+    fn builds_project_local_source_path() {
+        assert_eq!(
+            source_in_root(Path::new("/project"), Preset::E.build()),
+            Path::new("/project/assets/dlss/3.7.0/nvngx_dlss.dll")
+        );
+        assert_eq!(
+            source_in_root(Path::new("/project"), Preset::L.build()),
+            Path::new("/project/assets/dlss/310.7.0/nvngx_dlss.dll")
+        );
     }
 
     #[test]
