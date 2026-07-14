@@ -1,0 +1,13 @@
+[package]
+name = "dlss-swap"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal Steam/Proton wrapper for pinning NVIDIA DLSS Super Resolution DLLs"
+readme = "README.md"
+repository = "https://github.com/sieciowiecxyz/dlss-swap"
+homepage = "https://github.com/sieciowiecxyz/dlss-swap"
+keywords = ["dlss", "nvidia", "proton", "steam"]
+categories = ["command-line-utilities", "games"]
+
+[dependencies]
+sha2 = "0.10"
